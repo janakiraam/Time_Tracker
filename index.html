@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="logo">
+                <i class="fas fa-clock"></i>
+                <h2>Time Tracker</h2>
+            </div>
+            <ul class="nav-links">
+                <li class="active" data-tab="planner">
+                    <i class="fas fa-calendar-day"></i>
+                    <span>Planner</span>
+                </li>
+                <li data-tab="tasks">
+                    <i class="fas fa-tasks"></i>
+                    <span>Tasks</span>
+                </li>
+                <li data-tab="dashboard">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Dashboard</span>
+                </li>
+                <li data-tab="export">
+                    <i class="fas fa-file-excel"></i>
+                    <span>Export</span>
+                </li>
+            </ul>
+            <div class="sidebar-bottom">
+                <div class="db-actions">
+                    <button class="btn btn-sidebar" id="saveDbBtn" title="Save Database">
+                        <i class="fas fa-download"></i>
+                        <span>Save DB</span>
+                    </button>
+                    <button class="btn btn-sidebar" id="restoreDbBtn" title="Restore Database">
+                        <i class="fas fa-upload"></i>
+                        <span>Restore DB</span>
+                    </button>
+                    <input type="file" id="restoreFileInput" accept=".sqlite,.db" style="display:none;">
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Loading -->
+            <div id="loadingOverlay" class="loading-overlay">
+                <div class="spinner"></div>
+                <p>Loading SQLite database...</p>
+            </div>
+
+            <!-- Planner Tab -->
+            <section id="planner" class="tab-content active">
+                <div class="section-header">
+                    <h1><i class="fas fa-calendar-day"></i> Daily Planner</h1>
+                    <div class="planner-date-picker">
+                        <button class="btn btn-secondary btn-sm" id="prevDayBtn"><i class="fas fa-chevron-left"></i></button>
+                        <input type="date" id="plannerDate">
+                        <button class="btn btn-secondary btn-sm" id="nextDayBtn"><i class="fas fa-chevron-right"></i></button>
+                        <button class="btn btn-primary btn-sm" id="todayBtn">Today</button>
+                    </div>
+                </div>
+
+                <div class="planner-add-row">
+                    <input type="text" id="plannerTaskInput" placeholder="Add a task for this day..." class="planner-input">
+                    <select id="plannerCategoryInput" class="planner-select">
+                        <option value="Development">Development</option>
+                        <option value="Design">Design</option>
+                        <option value="Testing">Testing</option>
+                        <option value="Meeting">Meeting</option>
+                        <option value="Research">Research</option>
+                        <option value="Documentation">Documentation</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <button class="btn btn-primary" id="addPlannerTaskBtn"><i class="fas fa-plus"></i> Add</button>
+                </div>
+
+                <div class="planner-summary" id="plannerSummary">
+                    <span id="plannerTotal">0 tasks planned</span>
+                    <span id="plannerCompleted">0 completed</span>
+                    <span id="plannerTotalHours">0h tracked</span>
+                </div>
+
+                <div class="planner-list" id="plannerList">
+                    <div class="empty-state">
+                        <i class="fas fa-clipboard-list"></i>
+                        <h3>No tasks planned</h3>
+                        <p>Add tasks above to plan your day</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tasks Tab -->
+            <section id="tasks" class="tab-content">
+                <div class="section-header">
+                    <h1>All Tasks</h1>
+                    <button class="btn btn-primary" id="addTaskBtn">
+                        <i class="fas fa-plus"></i> New Task
+                    </button>
+                </div>
+
+                <!-- Add/Edit Task Modal -->
+                <div class="modal-overlay" id="taskModal">
+                    <div class="modal">
+                        <div class="modal-header">
+                            <h2 id="modalTitle">Add New Task</h2>
+                            <button class="modal-close" id="closeModal">&times;</button>
+                        </div>
+                        <form id="taskForm">
+                            <input type="hidden" id="taskId">
+                            <div class="form-group">
+                                <label for="taskName">Task Name <span class="required">*</span></label>
+                                <input type="text" id="taskName" placeholder="Enter task name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="taskCategory">Category</label>
+                                <select id="taskCategory">
+                                    <option value="Development">Development</option>
+                                    <option value="Design">Design</option>
+                                    <option value="Testing">Testing</option>
+                                    <option value="Meeting">Meeting</option>
+                                    <option value="Research">Research</option>
+                                    <option value="Documentation">Documentation</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="startDate">Start Date <span class="required">*</span></label>
+                                    <input type="date" id="startDate" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="startTime">Start Time <span class="required">*</span></label>
+                                    <input type="time" id="startTime" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="endDate">End Date</label>
+                                    <input type="date" id="endDate">
+                                </div>
+                                <div class="form-group">
+                                    <label for="endTime">End Time</label>
+                                    <input type="time" id="endTime">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="taskNotes">Notes</label>
+                                <textarea id="taskNotes" rows="2" placeholder="Add any notes..."></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Task</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Active Timer -->
+                <div class="active-timer-section" id="activeTimerSection" style="display:none;">
+                    <div class="active-timer-card">
+                        <div class="timer-info">
+                            <span class="timer-label">Currently Tracking:</span>
+                            <span class="timer-task-name" id="activeTaskName"></span>
+                        </div>
+                        <div class="timer-display" id="timerDisplay">00:00:00</div>
+                        <button class="btn btn-danger" id="stopTimerBtn">
+                            <i class="fas fa-stop"></i> Stop
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="searchInput" placeholder="Search tasks...">
+                    </div>
+                    <select id="filterCategory" class="filter-select">
+                        <option value="">All Categories</option>
+                        <option value="Development">Development</option>
+                        <option value="Design">Design</option>
+                        <option value="Testing">Testing</option>
+                        <option value="Meeting">Meeting</option>
+                        <option value="Research">Research</option>
+                        <option value="Documentation">Documentation</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <select id="filterStatus" class="filter-select">
+                        <option value="">All Status</option>
+                        <option value="running">Running</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                </div>
+
+                <div class="task-list" id="taskList"></div>
+            </section>
+
+            <!-- Dashboard Tab -->
+            <section id="dashboard" class="tab-content">
+                <div class="section-header">
+                    <h1>Analytics Dashboard</h1>
+                    <div class="date-range-picker">
+                        <input type="date" id="dashStartDate">
+                        <span>to</span>
+                        <input type="date" id="dashEndDate">
+                        <button class="btn btn-primary btn-sm" id="applyDashFilter">Apply</button>
+                    </div>
+                </div>
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <div class="card-icon blue"><i class="fas fa-tasks"></i></div>
+                        <div class="card-info"><h3 id="totalTasks">0</h3><p>Total Tasks</p></div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-icon green"><i class="fas fa-check-circle"></i></div>
+                        <div class="card-info"><h3 id="completedTasks">0</h3><p>Completed</p></div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-icon orange"><i class="fas fa-clock"></i></div>
+                        <div class="card-info"><h3 id="totalHours">0h</h3><p>Total Hours</p></div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-icon purple"><i class="fas fa-tachometer-alt"></i></div>
+                        <div class="card-info"><h3 id="avgHours">0h</h3><p>Avg per Task</p></div>
+                    </div>
+                </div>
+                <div class="charts-grid">
+                    <div class="chart-card"><h3>Hours by Category</h3><canvas id="categoryChart"></canvas></div>
+                    <div class="chart-card"><h3>Daily Hours Trend</h3><canvas id="dailyChart"></canvas></div>
+                    <div class="chart-card"><h3>Task Status Distribution</h3><canvas id="statusChart"></canvas></div>
+                    <div class="chart-card"><h3>Top Tasks by Duration</h3><canvas id="topTasksChart"></canvas></div>
+                </div>
+            </section>
+
+            <!-- Export Tab -->
+            <section id="export" class="tab-content">
+                <div class="section-header"><h1>Export to Excel</h1></div>
+                <div class="export-card">
+                    <div class="export-icon"><i class="fas fa-file-excel"></i></div>
+                    <h2>Download Time Sheet</h2>
+                    <p>Select a date range and download your tasks as an Excel spreadsheet.</p>
+                    <div class="export-form">
+                        <div class="form-row">
+                            <div class="form-group"><label for="exportStartDate">From Date</label><input type="date" id="exportStartDate"></div>
+                            <div class="form-group"><label for="exportEndDate">To Date</label><input type="date" id="exportEndDate"></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="exportCategory">Category (optional)</label>
+                            <select id="exportCategory">
+                                <option value="">All Categories</option>
+                                <option value="Development">Development</option>
+                                <option value="Design">Design</option>
+                                <option value="Testing">Testing</option>
+                                <option value="Meeting">Meeting</option>
+                                <option value="Research">Research</option>
+                                <option value="Documentation">Documentation</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="export-preview"><p><strong id="exportCount">0</strong> tasks found for selected criteria</p></div>
+                        <button class="btn btn-success btn-lg" id="downloadExcelBtn"><i class="fas fa-download"></i> Download Excel</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+    <script src="app.js"></script>
+</body>
+</html>
