@@ -80,6 +80,7 @@
                         <option value="Meeting">Meeting</option>
                         <option value="Research">Research</option>
                         <option value="Documentation">Documentation</option>
+                        <option value="Break">Break</option>
                         <option value="Other">Other</option>
                     </select>
                     <button class="btn btn-primary" id="addPlannerTaskBtn"><i class="fas fa-plus"></i> Add</button>
@@ -131,6 +132,7 @@
                                     <option value="Meeting">Meeting</option>
                                     <option value="Research">Research</option>
                                     <option value="Documentation">Documentation</option>
+                                    <option value="Break">Break</option>
                                     <option value="Other">Other</option>
                                 </select>
                             </div>
@@ -186,6 +188,13 @@
                         <i class="fas fa-search"></i>
                         <input type="text" id="searchInput" placeholder="Search tasks...">
                     </div>
+                    <div class="filter-date-range">
+                        <input type="date" id="filterStartDate" class="filter-date" title="From date">
+                        <span class="filter-date-sep">to</span>
+                        <input type="date" id="filterEndDate" class="filter-date" title="To date">
+                        <button class="btn btn-primary btn-sm" id="applyDateFilter" title="Apply date filter"><i class="fas fa-filter"></i> Filter</button>
+                        <button class="btn btn-secondary btn-sm" id="clearDateFilter" title="Clear dates"><i class="fas fa-times"></i></button>
+                    </div>
                     <select id="filterCategory" class="filter-select">
                         <option value="">All Categories</option>
                         <option value="Development">Development</option>
@@ -194,6 +203,7 @@
                         <option value="Meeting">Meeting</option>
                         <option value="Research">Research</option>
                         <option value="Documentation">Documentation</option>
+                        <option value="Break">Break</option>
                         <option value="Other">Other</option>
                     </select>
                     <select id="filterStatus" class="filter-select">
@@ -265,6 +275,7 @@
                                 <option value="Meeting">Meeting</option>
                                 <option value="Research">Research</option>
                                 <option value="Documentation">Documentation</option>
+                                <option value="Break">Break</option>
                                 <option value="Other">Other</option>
                             </select>
                         </div>
@@ -277,6 +288,6 @@
     </div>
 
     <div class="toast-container" id="toastContainer"></div>
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>

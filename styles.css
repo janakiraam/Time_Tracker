@@ -138,6 +138,10 @@ form { padding: 20px 24px; }
 .search-box i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-light); font-size: 14px; }
 .search-box input { width: 100%; padding: 10px 14px 10px 40px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; background: var(--bg-card); }
 .search-box input:focus { outline: none; border-color: var(--primary); }
+.filter-date-range { display: flex; align-items: center; gap: 6px; }
+.filter-date { padding: 9px 12px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; background: var(--bg-card); color: var(--text); }
+.filter-date:focus { outline: none; border-color: var(--primary); }
+.filter-date-sep { color: var(--text-light); font-size: 13px; }
 .filter-select { padding: 10px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; background: var(--bg-card); color: var(--text); cursor: pointer; min-width: 150px; }
 .filter-select:focus { outline: none; border-color: var(--primary); }
 
@@ -169,6 +173,7 @@ form { padding: 20px 24px; }
 .cat-Meeting { background: #e0e7ff; color: #4338ca; }
 .cat-Research { background: #d1fae5; color: #065f46; }
 .cat-Documentation { background: #ede9fe; color: #6d28d9; }
+.cat-Break { background: #fef9c3; color: #854d0e; }
 .cat-Other { background: #f1f5f9; color: #475569; }
 
 /* Empty State */

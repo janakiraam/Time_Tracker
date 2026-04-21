@@ -1,16 +1,145 @@
 // ==================== SQLite DATA LAYER ====================
 let db = null;
 let SQL = null;
+let serverAvailable = false; // Whether the Python server is running
+
+// Check if we're running via the local server
+async function checkServer() {
+    try {
+        const resp = await fetch('/api/status', { method: 'GET', signal: AbortSignal.timeout(1000) });
+        if (resp.ok) {
+            const json = await resp.json();
+            serverAvailable = true;
+            return json;
+        }
+    } catch (e) {
+        // Server not available (file:// or no server running)
+    }
+    serverAvailable = false;
+    return null;
+}
+
+// Load DB from the server file on disk
+async function loadDbFromServer() {
+    try {
+        const resp = await fetch('/api/db', { signal: AbortSignal.timeout(3000) });
+        if (resp.ok) {
+            const buf = await resp.arrayBuffer();
+            return new Uint8Array(buf);
+        }
+    } catch (e) {}
+    return null;
+}
+
+// Save DB to the server file on disk
+let lastKnownDbVersion = 0; // Track server DB modification time
+let isSaving = false; // Prevent polling during our own save
+
+async function saveDbToServer() {
+    if (!serverAvailable || !db) return;
+    isSaving = true;
+    try {
+        const data = db.export();
+        await fetch('/api/db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: data,
+            signal: AbortSignal.timeout(3000)
+        });
+        // Update our known version after saving
+        await updateKnownVersion();
+    } catch (e) {
+        console.warn('Failed to sync DB to server:', e.message);
+    }
+    isSaving = false;
+}
+
+// Get the current DB version (modification timestamp) from server
+async function getServerDbVersion() {
+    try {
+        const resp = await fetch('/api/db/version', { signal: AbortSignal.timeout(2000) });
+        if (resp.ok) {
+            const json = await resp.json();
+            return json.version || 0;
+        }
+    } catch (e) {}
+    return 0;
+}
+
+// Update our known version without reloading
+async function updateKnownVersion() {
+    lastKnownDbVersion = await getServerDbVersion();
+}
+
+// Poll for changes from other browser sessions
+async function pollForChanges() {
+    if (!serverAvailable || isSaving) return;
+    try {
+        const currentVersion = await getServerDbVersion();
+        if (currentVersion > 0 && lastKnownDbVersion > 0 && currentVersion !== lastKnownDbVersion) {
+            console.log(`DB changed on server (${lastKnownDbVersion} -> ${currentVersion}). Reloading...`);
+            lastKnownDbVersion = currentVersion;
+            await reloadDbFromServer();
+        }
+    } catch (e) {
+        // Silently ignore polling errors
+    }
+}
+
+// Reload the DB from server and refresh all views
+async function reloadDbFromServer() {
+    const serverData = await loadDbFromServer();
+    if (serverData && serverData.length > 0) {
+        if (db) db.close();
+        db = new SQL.Database(serverData);
+        taskIdCounter = null; // Reset counter so it recalculates
+        // Refresh all views
+        renderTasks();
+        renderPlanner();
+        restoreTimer();
+        updateExportPreview();
+        showToast('Data synced from another session', 'info');
+    }
+}
+
+let pollInterval = null;
+
+function startPolling() {
+    if (!serverAvailable) return;
+    // Poll every 3 seconds
+    pollInterval = setInterval(pollForChanges, 3000);
+}
 
 async function initDatabase() {
     SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
 
-    // Try to restore from IndexedDB cache first
-    const savedData = await loadDbFromIndexedDB();
-    if (savedData) {
-        db = new SQL.Database(new Uint8Array(savedData));
-    } else {
+    // Check if local server is running
+    const serverStatus = await checkServer();
+
+    // Priority: 1) Server file on disk, 2) IndexedDB cache, 3) New empty DB
+    let loaded = false;
+
+    if (serverAvailable) {
+        const serverData = await loadDbFromServer();
+        if (serverData && serverData.length > 0) {
+            db = new SQL.Database(serverData);
+            loaded = true;
+            console.log('Database loaded from server (disk file)');
+        }
+    }
+
+    if (!loaded) {
+        const savedData = await loadDbFromIndexedDB();
+        if (savedData) {
+            db = new SQL.Database(new Uint8Array(savedData));
+            loaded = true;
+            console.log('Database loaded from IndexedDB cache');
+        }
+    }
+
+    if (!loaded) {
         db = new SQL.Database();
+        console.log('New empty database created');
     }
 
     // Create tables if they don't exist
@@ -80,13 +209,16 @@ function openIDB() {
 async function persistDb() {
     if (!db) return;
     const data = db.export();
+    // Save to IndexedDB (local browser cache)
     const idb = await openIDB();
     const tx = idb.transaction('db', 'readwrite');
     tx.objectStore('db').put(data, 'main');
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error);
     });
+    // Also save to server (disk file) if available
+    saveDbToServer();
 }
 
 async function loadDbFromIndexedDB() {
@@ -177,6 +309,14 @@ const taskListEl = document.getElementById('taskList');
 const searchInput = document.getElementById('searchInput');
 const filterCategory = document.getElementById('filterCategory');
 const filterStatus = document.getElementById('filterStatus');
+const filterStartDate = document.getElementById('filterStartDate');
+const filterEndDate = document.getElementById('filterEndDate');
+const applyDateFilter = document.getElementById('applyDateFilter');
+const clearDateFilter = document.getElementById('clearDateFilter');
+
+// Active date filter values (only set when user clicks Filter)
+let activeDateFrom = '';
+let activeDateTo = '';
 const activeTimerSection = document.getElementById('activeTimerSection');
 const activeTaskName = document.getElementById('activeTaskName');
 const timerDisplay = document.getElementById('timerDisplay');
@@ -644,7 +784,21 @@ function renderTasks() {
             (t.notes && t.notes.toLowerCase().includes(search));
         const matchCat = !catFilter || t.category === catFilter;
         const matchStatus = !statusFilter || t.status === statusFilter;
-        return matchSearch && matchCat && matchStatus;
+
+        let matchDateFrom = true;
+        let matchDateTo = true;
+        if (activeDateFrom && t.startDate) {
+            const taskDate = new Date(t.startDate + 'T00:00:00');
+            const fromDate = new Date(activeDateFrom + 'T00:00:00');
+            matchDateFrom = taskDate >= fromDate;
+        }
+        if (activeDateTo && t.startDate) {
+            const taskDate = new Date(t.startDate + 'T00:00:00');
+            const toDate = new Date(activeDateTo + 'T23:59:59');
+            matchDateTo = taskDate <= toDate;
+        }
+
+        return matchSearch && matchCat && matchStatus && matchDateFrom && matchDateTo;
     });
 
     taskListEl.innerHTML = '';
@@ -759,6 +913,37 @@ window.deleteTask = deleteTask;
 searchInput.addEventListener('input', renderTasks);
 filterCategory.addEventListener('change', renderTasks);
 filterStatus.addEventListener('change', renderTasks);
+
+function initDateFilters() {
+    const applyBtn = document.getElementById('applyDateFilter');
+    const clearBtn = document.getElementById('clearDateFilter');
+    const startDateEl = document.getElementById('filterStartDate');
+    const endDateEl = document.getElementById('filterEndDate');
+
+    if (applyBtn) {
+        applyBtn.addEventListener('click', () => {
+            activeDateFrom = startDateEl.value;
+            activeDateTo = endDateEl.value;
+            console.log('Date filter applied:', activeDateFrom, 'to', activeDateTo);
+            if (activeDateFrom || activeDateTo) {
+                showToast(`Filtering: ${activeDateFrom || '...'} to ${activeDateTo || '...'}`, 'info');
+            }
+            renderTasks();
+        });
+    } else {
+        console.error('applyDateFilter button not found!');
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            startDateEl.value = '';
+            endDateEl.value = '';
+            activeDateFrom = '';
+            activeDateTo = '';
+            renderTasks();
+        });
+    }
+}
 
 // ==================== SAVE / RESTORE DB ====================
 saveDbBtn.addEventListener('click', () => {
@@ -1091,11 +1276,16 @@ async function init() {
         await initDatabase();
         document.getElementById('loadingOverlay').classList.add('hidden');
         setDefaultDates();
+        initDateFilters();
         initPlanner();
         renderPlanner();
         renderTasks();
         restoreTimer();
         updateExportPreview();
+
+        // Set initial DB version and start polling for cross-browser sync
+        await updateKnownVersion();
+        startPolling();
     } catch (err) {
         console.error('Failed to initialize database:', err);
         document.getElementById('loadingOverlay').innerHTML = `
