@@ -149,6 +149,7 @@ async function initDatabase() {
             task_id TEXT NOT NULL,
             name TEXT NOT NULL,
             category TEXT DEFAULT 'Other',
+            type TEXT DEFAULT 'work',
             startDate TEXT,
             startTime TEXT,
             endDate TEXT,
@@ -167,6 +168,7 @@ async function initDatabase() {
             plan_date TEXT NOT NULL,
             name TEXT NOT NULL,
             category TEXT DEFAULT 'Other',
+            type TEXT DEFAULT 'work',
             status TEXT DEFAULT 'pending',
             startTime TEXT,
             endTime TEXT,
@@ -189,6 +191,18 @@ async function initDatabase() {
                 db.run(`UPDATE tasks SET task_id = ? WHERE id = ?`, [tid, row[0]]);
             });
         }
+    }
+
+    // Migrate: add type column if missing
+    try {
+        db.run(`SELECT type FROM tasks LIMIT 1`);
+    } catch (e) {
+        db.run(`ALTER TABLE tasks ADD COLUMN type TEXT DEFAULT 'work'`);
+    }
+    try {
+        db.run(`SELECT type FROM planner LIMIT 1`);
+    } catch (e) {
+        db.run(`ALTER TABLE planner ADD COLUMN type TEXT DEFAULT 'work'`);
     }
 
     persistDb();
@@ -308,6 +322,7 @@ const modalTitle = document.getElementById('modalTitle');
 const taskListEl = document.getElementById('taskList');
 const searchInput = document.getElementById('searchInput');
 const filterCategory = document.getElementById('filterCategory');
+const filterType = document.getElementById('filterType');
 const filterStatus = document.getElementById('filterStatus');
 const filterStartDate = document.getElementById('filterStartDate');
 const filterEndDate = document.getElementById('filterEndDate');
@@ -329,6 +344,7 @@ const nextDayBtn = document.getElementById('nextDayBtn');
 const todayBtn = document.getElementById('todayBtn');
 const plannerTaskInput = document.getElementById('plannerTaskInput');
 const plannerCategoryInput = document.getElementById('plannerCategoryInput');
+const plannerTypeInput = document.getElementById('plannerTypeInput');
 const addPlannerTaskBtn = document.getElementById('addPlannerTaskBtn');
 const plannerList = document.getElementById('plannerList');
 const plannerTotal = document.getElementById('plannerTotal');
@@ -343,6 +359,7 @@ const applyDashFilter = document.getElementById('applyDashFilter');
 // Export
 const exportStartDate = document.getElementById('exportStartDate');
 const exportEndDate = document.getElementById('exportEndDate');
+const exportType = document.getElementById('exportType');
 const exportCategory = document.getElementById('exportCategory');
 const exportCount = document.getElementById('exportCount');
 const downloadExcelBtn = document.getElementById('downloadExcelBtn');
@@ -416,12 +433,13 @@ function addPlannerTask() {
         return;
     }
     const category = plannerCategoryInput.value;
+    const type = plannerTypeInput.value;
     const date = plannerDate.value;
     const taskId = generateTaskId();
 
     db.run(
-        `INSERT INTO planner (task_id, plan_date, name, category, status, createdAt) VALUES (?, ?, ?, ?, 'pending', ?)`,
-        [taskId, date, name, category, new Date().toISOString()]
+        `INSERT INTO planner (task_id, plan_date, name, category, type, status, createdAt) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+        [taskId, date, name, category, type, new Date().toISOString()]
     );
     persistDb();
 
@@ -483,6 +501,7 @@ function renderPlanner() {
             <div class="planner-item-main">
                 <div class="planner-item-name">${escapeHtml(task.name)}</div>
                 <div class="planner-item-meta">
+                    <span class="type-badge type-${task.type || 'work'}">${(task.type || 'work') === 'study' ? 'Study' : 'Work'}</span>
                     <span class="category-badge cat-${task.category}">${task.category}</span>
                     ${task.startTime ? `<span><i class="fas fa-play"></i> ${task.startTime}</span>` : ''}
                     ${task.endTime ? `<span><i class="fas fa-stop"></i> ${task.endTime}</span>` : ''}
@@ -577,6 +596,7 @@ function openModal(editTask = null) {
         document.getElementById('taskId').value = editTask.id;
         document.getElementById('taskName').value = editTask.name;
         document.getElementById('taskCategory').value = editTask.category;
+        document.getElementById('taskType').value = editTask.type || 'work';
         document.getElementById('startDate').value = editTask.startDate;
         document.getElementById('startTime').value = editTask.startTime;
         document.getElementById('endDate').value = editTask.endDate || '';
@@ -611,6 +631,7 @@ taskForm.addEventListener('submit', (e) => {
     const id = document.getElementById('taskId').value;
     const name = document.getElementById('taskName').value.trim();
     const category = document.getElementById('taskCategory').value;
+    const type = document.getElementById('taskType').value;
     const startDate = document.getElementById('startDate').value;
     const startTime = document.getElementById('startTime').value;
     const endDate = document.getElementById('endDate').value;
@@ -629,8 +650,8 @@ taskForm.addEventListener('submit', (e) => {
     if (id) {
         // Edit existing
         db.run(
-            `UPDATE tasks SET name=?, category=?, startDate=?, startTime=?, endDate=?, endTime=?, notes=?, status=?, duration=? WHERE id=?`,
-            [name, category, startDate, startTime, endDate || null, endTime || null, notes || null, status, duration, id]
+            `UPDATE tasks SET name=?, category=?, type=?, startDate=?, startTime=?, endDate=?, endTime=?, notes=?, status=?, duration=? WHERE id=?`,
+            [name, category, type, startDate, startTime, endDate || null, endTime || null, notes || null, status, duration, id]
         );
         if (isCompleted && activeTimerTaskId === id) {
             stopTimer();
@@ -640,8 +661,8 @@ taskForm.addEventListener('submit', (e) => {
         const newId = generateId();
         const taskId = generateTaskId();
         db.run(
-            `INSERT INTO tasks (id, task_id, name, category, startDate, startTime, endDate, endTime, notes, status, duration, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [newId, taskId, name, category, startDate, startTime, endDate || null, endTime || null, notes || null, status, duration, new Date().toISOString()]
+            `INSERT INTO tasks (id, task_id, name, category, type, startDate, startTime, endDate, endTime, notes, status, duration, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [newId, taskId, name, category, type, startDate, startTime, endDate || null, endTime || null, notes || null, status, duration, new Date().toISOString()]
         );
         if (!isCompleted) {
             startTimerFn(newId, name, startDate, startTime);
@@ -777,12 +798,14 @@ function renderTasks() {
     const tasks = getTasks();
     const search = searchInput.value.toLowerCase();
     const catFilter = filterCategory.value;
+    const typeFilter = filterType.value;
     const statusFilter = filterStatus.value;
 
     let filtered = tasks.filter(t => {
         const matchSearch = t.name.toLowerCase().includes(search) ||
             (t.notes && t.notes.toLowerCase().includes(search));
         const matchCat = !catFilter || t.category === catFilter;
+        const matchType = !typeFilter || (t.type || 'work') === typeFilter;
         const matchStatus = !statusFilter || t.status === statusFilter;
 
         let matchDateFrom = true;
@@ -798,7 +821,7 @@ function renderTasks() {
             matchDateTo = taskDate <= toDate;
         }
 
-        return matchSearch && matchCat && matchStatus && matchDateFrom && matchDateTo;
+        return matchSearch && matchCat && matchType && matchStatus && matchDateFrom && matchDateTo;
     });
 
     taskListEl.innerHTML = '';
@@ -840,6 +863,7 @@ function renderTasks() {
             <div class="task-main">
                 <div class="task-name">${escapeHtml(task.name)}</div>
                 <div class="task-meta">
+                    <span class="type-badge type-${task.type || 'work'}">${(task.type || 'work') === 'study' ? 'Study' : 'Work'}</span>
                     <span class="category-badge cat-${task.category}">${task.category}</span>
                     <span><i class="fas fa-play"></i> ${formatDateTime(task.startDate, task.startTime)}</span>
                     ${task.endDate && task.endTime
@@ -912,6 +936,7 @@ window.deleteTask = deleteTask;
 // ==================== FILTERS ====================
 searchInput.addEventListener('input', renderTasks);
 filterCategory.addEventListener('change', renderTasks);
+filterType.addEventListener('change', renderTasks);
 filterStatus.addEventListener('change', renderTasks);
 
 function initDateFilters() {
@@ -1011,14 +1036,14 @@ function updateDashboard() {
     }
 
     const completed = filtered.filter(t => t.status === 'completed');
-    const running = filtered.filter(t => t.status === 'running');
     const totalHrs = completed.reduce((sum, t) => sum + (t.duration || 0), 0);
-    const avgHrs = completed.length > 0 ? totalHrs / completed.length : 0;
+    const workHrs = completed.filter(t => (t.type || 'work') === 'work').reduce((sum, t) => sum + (t.duration || 0), 0);
+    const studyHrs = completed.filter(t => t.type === 'study').reduce((sum, t) => sum + (t.duration || 0), 0);
 
     document.getElementById('totalTasks').textContent = filtered.length;
-    document.getElementById('completedTasks').textContent = completed.length;
+    document.getElementById('workHours').textContent = workHrs.toFixed(1) + 'h';
+    document.getElementById('studyHours').textContent = studyHrs.toFixed(1) + 'h';
     document.getElementById('totalHours').textContent = totalHrs.toFixed(1) + 'h';
-    document.getElementById('avgHours').textContent = avgHrs.toFixed(1) + 'h';
 
     // Category Chart
     const catData = {};
@@ -1034,7 +1059,7 @@ function updateDashboard() {
             labels: Object.keys(catData),
             datasets: [{
                 data: Object.values(catData).map(v => parseFloat(v.toFixed(2))),
-                backgroundColor: ['#4f46e5', '#ec4899', '#f59e0b', '#6366f1', '#10b981', '#8b5cf6', '#64748b'],
+                backgroundColor: ['#4f46e5', '#ec4899', '#f59e0b', '#6366f1', '#10b981', '#8b5cf6', '#64748b', '#22d3ee', '#f97316', '#a855f7', '#84cc16', '#06b6d4'],
                 borderWidth: 0, hoverOffset: 8
             }]
         },
@@ -1076,21 +1101,24 @@ function updateDashboard() {
         }
     });
 
-    // Status Chart
+    // Work vs Study Chart
     if (statusChart) statusChart.destroy();
     const statusCtx = document.getElementById('statusChart').getContext('2d');
     statusChart = new Chart(statusCtx, {
         type: 'pie',
         data: {
-            labels: ['Completed', 'Running'],
+            labels: ['Work Hours', 'Study Hours'],
             datasets: [{
-                data: [completed.length, running.length],
-                backgroundColor: ['#10b981', '#4f46e5'], borderWidth: 0, hoverOffset: 8
+                data: [parseFloat(workHrs.toFixed(2)), parseFloat(studyHrs.toFixed(2))],
+                backgroundColor: ['#4f46e5', '#10b981'], borderWidth: 0, hoverOffset: 8
             }]
         },
         options: {
             responsive: true,
-            plugins: { legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } } }
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } },
+                tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed.toFixed(1)}h` } }
+            }
         }
     });
 
@@ -1127,12 +1155,14 @@ function getFilteredExportTasks() {
     const start = exportStartDate.value;
     const end = exportEndDate.value;
     const cat = exportCategory.value;
+    const type = exportType.value;
 
     return tasks.filter(t => {
         const matchStart = !start || t.startDate >= start;
         const matchEnd = !end || t.startDate <= end;
         const matchCat = !cat || t.category === cat;
-        return matchStart && matchEnd && matchCat;
+        const matchType = !type || (t.type || 'work') === type;
+        return matchStart && matchEnd && matchCat && matchType;
     });
 }
 
@@ -1143,6 +1173,7 @@ function updateExportPreview() {
 
 exportStartDate.addEventListener('change', updateExportPreview);
 exportEndDate.addEventListener('change', updateExportPreview);
+exportType.addEventListener('change', updateExportPreview);
 exportCategory.addEventListener('change', updateExportPreview);
 
 downloadExcelBtn.addEventListener('click', () => {
@@ -1157,6 +1188,7 @@ downloadExcelBtn.addEventListener('click', () => {
         'S.No': i + 1,
         'Task ID': t.task_id || '',
         'Task Name': t.name,
+        'Type': (t.type || 'work') === 'study' ? 'Study' : 'Work',
         'Category': t.category,
         'Start Date': t.startDate,
         'Start Time': t.startTime,
@@ -1177,7 +1209,7 @@ downloadExcelBtn.addEventListener('click', () => {
 
     const ws = XLSX.utils.json_to_sheet(excelData);
     ws['!cols'] = [
-        { wch: 6 }, { wch: 10 }, { wch: 30 }, { wch: 16 }, { wch: 12 },
+        { wch: 6 }, { wch: 10 }, { wch: 30 }, { wch: 10 }, { wch: 16 }, { wch: 12 },
         { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 12 }, { wch: 30 }
     ];
 

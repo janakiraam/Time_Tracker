@@ -175,6 +175,15 @@ form { padding: 20px 24px; }
 .cat-Documentation { background: #ede9fe; color: #6d28d9; }
 .cat-Break { background: #fef9c3; color: #854d0e; }
 .cat-Other { background: #f1f5f9; color: #475569; }
+.cat-Reading { background: #f0fdf4; color: #15803d; }
+.cat-Practice { background: #fff7ed; color: #c2410c; }
+.cat-Revision { background: #fdf4ff; color: #9333ea; }
+.cat-Course { background: #f0f9ff; color: #0369a1; }
+
+/* Type Badge */
+.type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.type-work { background: #e0e7ff; color: #3730a3; }
+.type-study { background: #dcfce7; color: #166534; }
 
 /* Empty State */
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-light); }
