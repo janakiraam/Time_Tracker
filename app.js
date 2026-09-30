@@ -324,6 +324,7 @@ const searchInput = document.getElementById('searchInput');
 const filterCategory = document.getElementById('filterCategory');
 const filterType = document.getElementById('filterType');
 const filterStatus = document.getElementById('filterStatus');
+const sortBy = document.getElementById('sortBy');
 const filterStartDate = document.getElementById('filterStartDate');
 const filterEndDate = document.getElementById('filterEndDate');
 const applyDateFilter = document.getElementById('applyDateFilter');
@@ -378,6 +379,10 @@ let topTasksChart = null;
 // Timer
 let timerInterval = null;
 let activeTimerTaskId = null;
+
+// Planner live timer
+let plannerTimerInterval = null;
+let activePlannerTaskId = null;
 
 // ==================== NAVIGATION ====================
 navLinks.forEach(link => {
@@ -493,7 +498,7 @@ function renderPlanner() {
             item.style.cursor = 'pointer';
         }
 
-        const durText = task.duration ? formatDuration(task.duration) : (task.status === 'running' ? '...' : '—');
+        const durText = task.duration ? formatDuration(task.duration) : (task.status === 'running' ? '<span class="planner-live-timer" data-id="' + task.id + '">00:00:00</span>' : '—');
         const durLabel = task.status === 'completed' ? 'DONE' : (task.status === 'running' ? 'RUNNING' : 'PENDING');
 
         item.innerHTML = `
@@ -543,6 +548,14 @@ function renderPlanner() {
 
         plannerList.appendChild(item);
     });
+
+    // Restart live timer for any running task (after DOM is rebuilt)
+    const runningTask = tasks.find(t => t.status === 'running');
+    if (runningTask && runningTask.startTime) {
+        startPlannerTimer(runningTask.id, runningTask.plan_date, runningTask.startTime);
+    }
+
+    updateDailyGoals(date);
 }
 
 function startPlannerTask(id) {
@@ -551,14 +564,40 @@ function startPlannerTask(id) {
     db.run(`UPDATE planner SET status = 'running', startTime = ? WHERE id = ?`, [timeStr, id]);
     persistDb();
     showToast('Timer started', 'success');
+    activePlannerTaskId = id;
+    startPlannerTimer(id, formatDateInput(now), timeStr);
     renderPlanner();
+}
+
+function startPlannerTimer(id, planDate, startTime) {
+    if (plannerTimerInterval) clearInterval(plannerTimerInterval);
+    activePlannerTaskId = id;
+    const startDateTime = new Date(`${planDate}T${startTime}`);
+    plannerTimerInterval = setInterval(() => {
+        const el = document.querySelector(`.planner-live-timer[data-id="${id}"]`);
+        if (!el) return;
+        const diff = Date.now() - startDateTime.getTime();
+        if (diff < 0) return;
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        el.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }, 1000);
+}
+
+function stopPlannerTimer() {
+    if (plannerTimerInterval) {
+        clearInterval(plannerTimerInterval);
+        plannerTimerInterval = null;
+    }
+    activePlannerTaskId = null;
 }
 
 function stopPlannerTask(id) {
     const now = new Date();
+    const endDate = formatDateInput(now);
     const timeStr = formatTimeInput(now);
 
-    // Get task to calculate duration
     const result = db.exec(`SELECT * FROM planner WHERE id = ?`, [id]);
     if (result.length > 0) {
         const cols = result[0].columns;
@@ -567,12 +606,13 @@ function stopPlannerTask(id) {
 
         const planDate = row.plan_date;
         const startTime = row.startTime;
-        const duration = calculateDuration(planDate, startTime, planDate, timeStr);
+        const duration = calculateDuration(planDate, startTime, endDate, timeStr);
 
         db.run(`UPDATE planner SET status = 'completed', endTime = ?, duration = ? WHERE id = ?`, [timeStr, duration, id]);
         persistDb();
         showToast(`Task completed — ${formatDuration(duration)}`, 'success');
     }
+    stopPlannerTimer();
     renderPlanner();
 }
 
@@ -587,6 +627,58 @@ function deletePlannerTask(id) {
 window.startPlannerTask = startPlannerTask;
 window.stopPlannerTask = stopPlannerTask;
 window.deletePlannerTask = deletePlannerTask;
+
+// ==================== DAILY GOALS ====================
+function getGoals() {
+    return {
+        work: parseFloat(localStorage.getItem('goalWork') || '6'),
+        study: parseFloat(localStorage.getItem('goalStudy') || '2')
+    };
+}
+
+function updateDailyGoals(date) {
+    if (!date) return;
+    const goals = getGoals();
+
+    const q = (type, table, dateCol) => {
+        const typeFilter = type === 'work' ? `AND (type = 'work' OR type IS NULL)` : `AND type = 'study'`;
+        const res = db.exec(`SELECT SUM(duration) FROM ${table} WHERE status='completed' ${typeFilter} AND ${dateCol}=?`, [date]);
+        return (res[0]?.values[0][0]) || 0;
+    };
+
+    const workHrs = q('work', 'tasks', 'startDate') + q('work', 'planner', 'plan_date');
+    const studyHrs = q('study', 'tasks', 'startDate') + q('study', 'planner', 'plan_date');
+
+    const workPct = Math.min(100, (workHrs / goals.work) * 100).toFixed(1);
+    const studyPct = Math.min(100, (studyHrs / goals.study) * 100).toFixed(1);
+
+    const workDone = workPct >= 100;
+    const studyDone = studyPct >= 100;
+
+    document.getElementById('goalWorkLabel').textContent = `${formatDuration(workHrs)} / ${goals.work}h${workDone ? ' ✓' : ''}`;
+    document.getElementById('goalStudyLabel').textContent = `${formatDuration(studyHrs)} / ${goals.study}h${studyDone ? ' ✓' : ''}`;
+    document.getElementById('goalWorkBar').style.width = workPct + '%';
+    document.getElementById('goalStudyBar').style.width = studyPct + '%';
+}
+
+function initGoals() {
+    document.getElementById('editWorkGoal').addEventListener('click', () => {
+        const current = getGoals().work;
+        const val = prompt(`Set daily Work goal (hours):`, current);
+        if (val !== null && !isNaN(parseFloat(val)) && parseFloat(val) > 0) {
+            localStorage.setItem('goalWork', parseFloat(val));
+            updateDailyGoals(plannerDate.value);
+        }
+    });
+    document.getElementById('editStudyGoal').addEventListener('click', () => {
+        const current = getGoals().study;
+        const val = prompt(`Set daily Study goal (hours):`, current);
+        if (val !== null && !isNaN(parseFloat(val)) && parseFloat(val) > 0) {
+            localStorage.setItem('goalStudy', parseFloat(val));
+            updateDailyGoals(plannerDate.value);
+        }
+    });
+}
 
 // ==================== MODAL ====================
 function openModal(editTask = null) {
@@ -824,6 +916,13 @@ function renderTasks() {
         return matchSearch && matchCat && matchType && matchStatus && matchDateFrom && matchDateTo;
     });
 
+    const sort = sortBy.value;
+    if (sort === 'oldest') filtered.sort((a, b) => (a.startDate + a.startTime).localeCompare(b.startDate + b.startTime));
+    else if (sort === 'longest') filtered.sort((a, b) => (b.duration || 0) - (a.duration || 0));
+    else if (sort === 'shortest') filtered.sort((a, b) => (a.duration || 0) - (b.duration || 0));
+    else if (sort === 'az') filtered.sort((a, b) => a.name.localeCompare(b.name));
+    // default 'newest' keeps original DESC order from DB
+
     taskListEl.innerHTML = '';
 
     if (filtered.length === 0) {
@@ -938,6 +1037,7 @@ searchInput.addEventListener('input', renderTasks);
 filterCategory.addEventListener('change', renderTasks);
 filterType.addEventListener('change', renderTasks);
 filterStatus.addEventListener('change', renderTasks);
+sortBy.addEventListener('change', renderTasks);
 
 function initDateFilters() {
     const applyBtn = document.getElementById('applyDateFilter');
@@ -1022,8 +1122,21 @@ restoreFileInput.addEventListener('change', async (e) => {
 });
 
 // ==================== DASHBOARD ====================
-function updateDashboard() {
+function getAllTrackedEntries() {
     const tasks = getTasks();
+    const res = db.exec(`SELECT * FROM planner WHERE status='completed' AND duration IS NOT NULL ORDER BY createdAt DESC`);
+    if (res.length === 0) return tasks;
+    const cols = res[0].columns;
+    const plannerEntries = res[0].values.map(row => {
+        const obj = {};
+        cols.forEach((c, i) => obj[c] = row[i]);
+        return { ...obj, startDate: obj.plan_date, status: 'completed' };
+    });
+    return [...tasks, ...plannerEntries];
+}
+
+function updateDashboard() {
+    const tasks = getAllTrackedEntries();
     const startFilter = dashStartDate.value;
     const endFilter = dashEndDate.value;
 
@@ -1047,104 +1160,65 @@ function updateDashboard() {
 
     // Category Chart
     const catData = {};
-    completed.forEach(t => {
-        catData[t.category] = (catData[t.category] || 0) + (t.duration || 0);
-    });
-
-    if (categoryChart) categoryChart.destroy();
+    completed.forEach(t => { catData[t.category] = (catData[t.category] || 0) + (t.duration || 0); });
+    if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
     const catCtx = document.getElementById('categoryChart').getContext('2d');
-    categoryChart = new Chart(catCtx, {
-        type: 'doughnut',
-        data: {
-            labels: Object.keys(catData),
-            datasets: [{
-                data: Object.values(catData).map(v => parseFloat(v.toFixed(2))),
-                backgroundColor: ['#4f46e5', '#ec4899', '#f59e0b', '#6366f1', '#10b981', '#8b5cf6', '#64748b', '#22d3ee', '#f97316', '#a855f7', '#84cc16', '#06b6d4'],
-                borderWidth: 0, hoverOffset: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } },
-                tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed.toFixed(1)}h` } }
-            }
-        }
-    });
+    if (Object.keys(catData).length === 0) {
+        catCtx.clearRect(0, 0, catCtx.canvas.width, catCtx.canvas.height);
+        catCtx.canvas.parentElement.querySelector('h3').nextSibling?.remove?.();
+    } else {
+        categoryChart = new Chart(catCtx, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(catData),
+                datasets: [{ data: Object.values(catData).map(v => parseFloat(v.toFixed(2))), backgroundColor: ['#4f46e5','#ec4899','#f59e0b','#6366f1','#10b981','#8b5cf6','#64748b','#22d3ee','#f97316','#a855f7','#84cc16','#06b6d4'], borderWidth: 0, hoverOffset: 8 }]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } }, tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed.toFixed(1)}h` } } } }
+        });
+    }
 
     // Daily Chart
     const dailyData = {};
-    completed.forEach(t => {
-        dailyData[t.startDate] = (dailyData[t.startDate] || 0) + (t.duration || 0);
-    });
+    completed.forEach(t => { dailyData[t.startDate] = (dailyData[t.startDate] || 0) + (t.duration || 0); });
     const sortedDays = Object.keys(dailyData).sort();
-
-    if (dailyChart) dailyChart.destroy();
+    if (dailyChart) { dailyChart.destroy(); dailyChart = null; }
     const dailyCtx = document.getElementById('dailyChart').getContext('2d');
-    dailyChart = new Chart(dailyCtx, {
-        type: 'bar',
-        data: {
-            labels: sortedDays.map(d => formatShortDate(d)),
-            datasets: [{
-                label: 'Hours',
-                data: sortedDays.map(d => parseFloat(dailyData[d].toFixed(2))),
-                backgroundColor: '#818cf8', borderRadius: 6, barThickness: 32
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.y.toFixed(1)} hours` } } },
-            scales: {
-                y: { beginAtZero: true, title: { display: true, text: 'Hours' }, grid: { color: '#f1f5f9' } },
-                x: { grid: { display: false } }
-            }
-        }
-    });
+    if (sortedDays.length === 0) {
+        dailyCtx.clearRect(0, 0, dailyCtx.canvas.width, dailyCtx.canvas.height);
+    } else {
+        dailyChart = new Chart(dailyCtx, {
+            type: 'bar',
+            data: { labels: sortedDays.map(d => formatShortDate(d)), datasets: [{ label: 'Hours', data: sortedDays.map(d => parseFloat(dailyData[d].toFixed(2))), backgroundColor: '#818cf8', borderRadius: 6, barThickness: 32 }] },
+            options: { responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.y.toFixed(1)} hours` } } }, scales: { y: { beginAtZero: true, title: { display: true, text: 'Hours' }, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { grid: { display: false } } } }
+        });
+    }
 
     // Work vs Study Chart
-    if (statusChart) statusChart.destroy();
+    if (statusChart) { statusChart.destroy(); statusChart = null; }
     const statusCtx = document.getElementById('statusChart').getContext('2d');
-    statusChart = new Chart(statusCtx, {
-        type: 'pie',
-        data: {
-            labels: ['Work Hours', 'Study Hours'],
-            datasets: [{
-                data: [parseFloat(workHrs.toFixed(2)), parseFloat(studyHrs.toFixed(2))],
-                backgroundColor: ['#4f46e5', '#10b981'], borderWidth: 0, hoverOffset: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } },
-                tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed.toFixed(1)}h` } }
-            }
-        }
-    });
+    if (workHrs === 0 && studyHrs === 0) {
+        statusCtx.clearRect(0, 0, statusCtx.canvas.width, statusCtx.canvas.height);
+    } else {
+        statusChart = new Chart(statusCtx, {
+            type: 'pie',
+            data: { labels: ['Work Hours', 'Study Hours'], datasets: [{ data: [parseFloat(workHrs.toFixed(2)), parseFloat(studyHrs.toFixed(2))], backgroundColor: ['#4f46e5', '#10b981'], borderWidth: 0, hoverOffset: 8 }] },
+            options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } }, tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed.toFixed(1)}h` } } } }
+        });
+    }
 
     // Top Tasks Chart
     const topTasks = [...completed].sort((a, b) => (b.duration || 0) - (a.duration || 0)).slice(0, 8);
-    if (topTasksChart) topTasksChart.destroy();
+    if (topTasksChart) { topTasksChart.destroy(); topTasksChart = null; }
     const topCtx = document.getElementById('topTasksChart').getContext('2d');
-    topTasksChart = new Chart(topCtx, {
-        type: 'bar',
-        data: {
-            labels: topTasks.map(t => t.name.length > 25 ? t.name.substring(0, 25) + '...' : t.name),
-            datasets: [{
-                label: 'Hours',
-                data: topTasks.map(t => parseFloat((t.duration || 0).toFixed(2))),
-                backgroundColor: '#f59e0b', borderRadius: 6, barThickness: 24
-            }]
-        },
-        options: {
-            indexAxis: 'y', responsive: true,
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.x.toFixed(1)} hours` } } },
-            scales: {
-                x: { beginAtZero: true, title: { display: true, text: 'Hours' }, grid: { color: '#f1f5f9' } },
-                y: { grid: { display: false } }
-            }
-        }
-    });
+    if (topTasks.length === 0) {
+        topCtx.clearRect(0, 0, topCtx.canvas.width, topCtx.canvas.height);
+    } else {
+        topTasksChart = new Chart(topCtx, {
+            type: 'bar',
+            data: { labels: topTasks.map(t => t.name.length > 25 ? t.name.substring(0, 25) + '...' : t.name), datasets: [{ label: 'Hours', data: topTasks.map(t => parseFloat((t.duration || 0).toFixed(2))), backgroundColor: '#f59e0b', borderRadius: 6, barThickness: 24 }] },
+            options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.parsed.x.toFixed(1)} hours` } } }, scales: { x: { beginAtZero: true, title: { display: true, text: 'Hours' }, grid: { color: 'rgba(0,0,0,0.05)' } }, y: { grid: { display: false } } } }
+        });
+    }
 }
 
 applyDashFilter.addEventListener('click', updateDashboard);
@@ -1287,6 +1361,36 @@ function showToast(message, type = 'info') {
     setTimeout(() => { if (toast.parentElement) toast.remove(); }, 3000);
 }
 
+// ==================== DARK MODE ====================
+function initDarkMode() {
+    const toggle = document.getElementById('darkModeToggle');
+    const icon = toggle.querySelector('i');
+    if (localStorage.getItem('darkMode') === 'true') {
+        document.body.classList.add('dark');
+        icon.className = 'fas fa-sun';
+    }
+    toggle.addEventListener('click', () => {
+        const isDark = document.body.classList.toggle('dark');
+        localStorage.setItem('darkMode', isDark);
+        icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+    });
+}
+
+// ==================== KEYBOARD SHORTCUTS ====================
+function initKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        const tag = document.activeElement.tagName;
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+        if (taskModal.classList.contains('active')) {
+            if (e.key === 'Escape') closeModalFn();
+            return;
+        }
+        if (e.key === 'Escape') closeModalFn();
+        if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openModal(); }
+        if ((e.key === 's' || e.key === 'S') && activeTimerTaskId) { e.preventDefault(); stopTimer(); }
+    });
+}
+
 // ==================== SET DEFAULT DATES ====================
 function setDefaultDates() {
     const now = new Date();
@@ -1310,6 +1414,9 @@ async function init() {
         setDefaultDates();
         initDateFilters();
         initPlanner();
+        initGoals();
+        initDarkMode();
+        initKeyboardShortcuts();
         renderPlanner();
         renderTasks();
         restoreTimer();

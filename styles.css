@@ -252,3 +252,65 @@ form { padding: 20px 24px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ==================== DAILY GOALS ==================== */
+.daily-goals { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.goal-item { flex: 1; min-width: 220px; background: var(--bg-card); border-radius: var(--radius-sm); padding: 12px 16px; box-shadow: var(--shadow); }
+.goal-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.goal-label { font-size: 13px; font-weight: 700; color: var(--text); margin-left: auto; }
+.goal-edit-btn { width: 24px; height: 24px; font-size: 11px; color: var(--text-light); }
+.goal-bar { background: var(--border); border-radius: 8px; height: 8px; overflow: hidden; }
+.goal-progress { height: 100%; border-radius: 8px; transition: width 0.5s ease; }
+.goal-work { background: linear-gradient(90deg, #4f46e5, #818cf8); }
+.goal-study { background: linear-gradient(90deg, #10b981, #34d399); }
+
+/* Planner live timer */
+.planner-live-timer { font-variant-numeric: tabular-nums; font-weight: 800; color: var(--primary); font-size: 16px; }
+
+/* ==================== DARK MODE ==================== */
+.dark-toggle { color: rgba(255,255,255,0.7) !important; }
+.dark-toggle:hover { color: white !important; background: rgba(255,255,255,0.15) !important; }
+
+body.dark {
+    --bg: #0f172a;
+    --bg-card: #1e293b;
+    --text: #f1f5f9;
+    --text-light: #94a3b8;
+    --border: #334155;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.4), 0 4px 6px -4px rgba(0,0,0,0.3);
+}
+body.dark .sidebar { background: linear-gradient(180deg, #0d0b2e, #1a1854); }
+body.dark .active-timer-card { background: linear-gradient(135deg, #3730a3, #5b21b6); }
+body.dark .filter-select,
+body.dark .search-box input,
+body.dark .filter-date,
+body.dark .planner-input,
+body.dark .planner-select,
+body.dark .form-group input,
+body.dark .form-group select,
+body.dark .form-group textarea { background: #1e293b; color: var(--text); border-color: var(--border); }
+body.dark .modal { background: #1e293b; }
+body.dark .modal-header { border-color: var(--border); }
+body.dark .export-preview { background: #0f172a; }
+body.dark .chart-card h3,
+body.dark .card-info p { color: var(--text-light); }
+body.dark ::-webkit-scrollbar-track { background: #0f172a; }
+body.dark ::-webkit-scrollbar-thumb { background: #334155; }
+body.dark .goal-bar { background: #334155; }
+body.dark .cat-Development { background: #1e3a5f; color: #93c5fd; }
+body.dark .cat-Design { background: #4a1442; color: #f9a8d4; }
+body.dark .cat-Testing { background: #44330a; color: #fcd34d; }
+body.dark .cat-Meeting { background: #1e1b4b; color: #a5b4fc; }
+body.dark .cat-Research { background: #064e3b; color: #6ee7b7; }
+body.dark .cat-Documentation { background: #2e1065; color: #c4b5fd; }
+body.dark .cat-Break { background: #422006; color: #fde68a; }
+body.dark .cat-Other { background: #1e293b; color: #94a3b8; }
+body.dark .cat-Reading { background: #052e16; color: #86efac; }
+body.dark .cat-Practice { background: #431407; color: #fdba74; }
+body.dark .cat-Revision { background: #3b0764; color: #e9d5ff; }
+body.dark .cat-Course { background: #0c3045; color: #7dd3fc; }
+body.dark .type-work { background: #1e1b4b; color: #a5b4fc; }
+body.dark .type-study { background: #052e16; color: #86efac; }
+body.dark .badge-running { background: #1e1b4b; color: #a5b4fc; }
+body.dark .badge-completed { background: #052e16; color: #6ee7b7; }

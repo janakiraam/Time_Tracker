@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Time Tracker</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=3">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
@@ -17,6 +17,9 @@
             <div class="logo">
                 <i class="fas fa-clock"></i>
                 <h2>Time Tracker</h2>
+                <button class="btn-icon dark-toggle" id="darkModeToggle" title="Toggle dark mode" style="margin-left:auto;">
+                    <i class="fas fa-moon"></i>
+                </button>
             </div>
             <ul class="nav-links">
                 <li class="active" data-tab="planner">
@@ -102,6 +105,26 @@
                     <span id="plannerTotal">0 tasks planned</span>
                     <span id="plannerCompleted">0 completed</span>
                     <span id="plannerTotalHours">0h tracked</span>
+                </div>
+
+                <!-- Daily Goals -->
+                <div class="daily-goals" id="dailyGoals">
+                    <div class="goal-item">
+                        <div class="goal-header">
+                            <span class="type-badge type-work">Work</span>
+                            <span class="goal-label" id="goalWorkLabel">0h / 6h</span>
+                            <button class="btn-icon goal-edit-btn" id="editWorkGoal" title="Edit work goal"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="goal-bar"><div class="goal-progress goal-work" id="goalWorkBar" style="width:0%"></div></div>
+                    </div>
+                    <div class="goal-item">
+                        <div class="goal-header">
+                            <span class="type-badge type-study">Study</span>
+                            <span class="goal-label" id="goalStudyLabel">0h / 2h</span>
+                            <button class="btn-icon goal-edit-btn" id="editStudyGoal" title="Edit study goal"><i class="fas fa-pen"></i></button>
+                        </div>
+                        <div class="goal-bar"><div class="goal-progress goal-study" id="goalStudyBar" style="width:0%"></div></div>
+                    </div>
                 </div>
 
                 <div class="planner-list" id="plannerList">
@@ -253,6 +276,13 @@
                         <option value="running">Running</option>
                         <option value="completed">Completed</option>
                     </select>
+                    <select id="sortBy" class="filter-select">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="longest">Longest First</option>
+                        <option value="shortest">Shortest First</option>
+                        <option value="az">A → Z</option>
+                    </select>
                 </div>
 
                 <div class="task-list" id="taskList"></div>
@@ -348,6 +378,6 @@
     </div>
 
     <div class="toast-container" id="toastContainer"></div>
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=5"></script>
 </body>
 </html>
